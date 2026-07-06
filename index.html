@@ -35,6 +35,7 @@
         <div class="summary-row muted" id="summary-detail"></div>
         <div class="summary-row">
           <button id="btn-view-questions" class="btn btn-secondary btn-small">🔍 View parse report</button>
+          <button id="btn-add-question" class="btn btn-secondary btn-small">➕ Add question</button>
         </div>
 
         <div class="options-row">
@@ -48,6 +49,12 @@
         </div>
 
         <button id="btn-start" class="btn btn-primary">Start Quiz ▶</button>
+      </div>
+
+      <!-- Saved sets: parsed uploads persist in localStorage for re-taking -->
+      <div id="history-section" class="history" hidden>
+        <h3>📚 Saved question sets <span class="hint">(stored only in this browser)</span></h3>
+        <div id="history-list"></div>
       </div>
 
       <details class="how-it-works">
@@ -133,10 +140,33 @@ Explanation: optional text...</pre>
   <div id="parse-dialog-body"></div>
 </dialog>
 
+<!-- Add-question form: appends a hand-written MCQ to the active set -->
+<dialog id="add-q-dialog">
+  <div class="dialog-head">
+    <h3>Add a question</h3>
+    <button id="btn-close-addq" class="btn btn-secondary btn-small">Close ✕</button>
+  </div>
+  <label class="field">Question text
+    <textarea id="addq-text" rows="3" placeholder="What does the -r flag do?"></textarea>
+  </label>
+  <label class="field">Options — one per line (first line becomes A)
+    <textarea id="addq-options" rows="4" placeholder="Recursive&#10;Reverse&#10;Read-only&#10;Raw"></textarea>
+  </label>
+  <label class="field">Correct answer letter(s)
+    <input type="text" id="addq-answer" placeholder='e.g. "B" or "A,C" for multi-answer' />
+  </label>
+  <label class="field">Explanation (optional)
+    <textarea id="addq-explanation" rows="2"></textarea>
+  </label>
+  <div id="addq-error" class="status error" hidden></div>
+  <button id="btn-addq-save" class="btn btn-primary">Add question ➕</button>
+</dialog>
+
 <script src="vendor/pdfjs/pdf.min.js"></script>
 <script src="vendor/mammoth/mammoth.browser.min.js"></script>
 <script src="vendor/tesseract/tesseract.min.js"></script>
 <script src="js/quizParser.js"></script>
+<script src="js/quizStore.js"></script>
 <script src="js/textExtract.js"></script>
 <script src="js/quizEngine.js"></script>
 <script src="js/leaderboard.js"></script>

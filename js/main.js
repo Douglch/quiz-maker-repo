@@ -1,12 +1,14 @@
 // main.js — wires the upload screen to the extractor/parser and hands off
-// to QuizEngine. Also owns the "parse report" dialog (parsed vs skipped).
+// to QuizEngine. Also owns the saved-set history, the "parse report"
+// dialog, and the manual add-question dialog.
 
 (function () {
   const el = (id) => document.getElementById(id);
 
   let parsedQuestions = [];
   let parseReport = null;    // { questions, skipped, missing } for the dialog
-  let currentQuizName = '';  // file name, shown on the leaderboard
+  let currentQuizName = '';  // set name, shown on the leaderboard
+  let currentSetId = null;   // active QuizStore set (for add/rename/delete)
 
   const fileInput = el('file-input');
   const dropzone = el('dropzone');
@@ -89,10 +91,6 @@
         }
       }
 
-      parsedQuestions = questions;
-      parseReport = { questions, skipped, missing: missingNumbers(questions, skipped) };
-      currentQuizName = file.name;
-
       if (questions.length === 0) {
         setStatus(
           'No questions matched the expected pattern (number, options A-D/H, "Answer:" line).\n' +
@@ -102,12 +100,28 @@
         return;
       }
 
-      clearStatus();
-      renderSummary(parseReport);
+      // Persist to history so this set can be re-taken without the file.
+      const set = QuizStore.saveSet(file.name, questions);
+      activateSet(set, skipped);
+      renderHistory();
     } catch (err) {
       console.error(err);
       setStatus(`Error: ${err.message}`, true);
     }
+  }
+
+  // Makes a set the active quiz source and shows the summary box.
+  function activateSet(set, skipped = []) {
+    currentSetId = set.id;
+    currentQuizName = set.name;
+    parsedQuestions = set.questions;
+    parseReport = {
+      questions: set.questions,
+      skipped,
+      missing: missingNumbers(set.questions, skipped),
+    };
+    clearStatus();
+    renderSummary(parseReport);
   }
 
   function renderSummary({ questions, skipped, missing }) {
@@ -125,6 +139,117 @@
     el('opt-limit-max').textContent = `of ${questions.length} available`;
     summaryBox.hidden = false;
   }
+
+  // ---------------------------------------------------- saved set history ----
+
+  function renderHistory() {
+    const listBox = el('history-list');
+    listBox.innerHTML = '';
+    const sets = QuizStore.list();
+    el('history-section').hidden = sets.length === 0;
+
+    sets.forEach((set) => {
+      const row = document.createElement('div');
+      row.className = 'history-item';
+
+      const info = document.createElement('div');
+      info.className = 'history-info';
+      const name = document.createElement('strong');
+      name.textContent = set.name;
+      const meta = document.createElement('div');
+      meta.className = 'hint';
+      meta.textContent = `${set.questions.length} questions · saved ${new Date(set.updatedAt).toLocaleDateString()}`;
+      info.append(name, meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'history-actions';
+      const btn = (label, cls, onClick) => {
+        const b = document.createElement('button');
+        b.className = `btn ${cls} btn-small`;
+        b.textContent = label;
+        b.addEventListener('click', onClick);
+        actions.appendChild(b);
+      };
+      btn('Load ▶', 'btn-primary', () => activateSet(QuizStore.get(set.id)));
+      btn('✏️ Rename', 'btn-secondary', () => {
+        const newName = prompt('New name for this question set:', set.name);
+        if (!newName || !newName.trim()) return;
+        const renamed = QuizStore.rename(set.id, newName);
+        if (renamed && set.id === currentSetId) currentQuizName = renamed.name;
+        renderHistory();
+      });
+      btn('🗑 Delete', 'btn-secondary', () => {
+        if (!confirm(`Delete "${set.name}" (${set.questions.length} questions)?`)) return;
+        QuizStore.remove(set.id);
+        if (set.id === currentSetId) {
+          // The active set is gone — clear the summary to avoid stale state.
+          currentSetId = null;
+          parsedQuestions = [];
+          summaryBox.hidden = true;
+        }
+        renderHistory();
+      });
+
+      row.append(info, actions);
+      listBox.appendChild(row);
+    });
+  }
+
+  // ------------------------------------------------ add-question dialog ----
+
+  function openAddQuestion() {
+    el('addq-error').hidden = true;
+    el('add-q-dialog').showModal();
+  }
+
+  function saveNewQuestion() {
+    const fail = (msg) => {
+      const box = el('addq-error');
+      box.hidden = false;
+      box.textContent = msg;
+    };
+
+    const text = el('addq-text').value.trim();
+    const optionTexts = el('addq-options').value.split('\n')
+      .map((t) => t.trim()).filter(Boolean)
+      // Tolerate pasted "A. choice" / "b) choice" prefixes — letters are
+      // assigned by line position anyway.
+      .map((t) => t.replace(/^[A-Ha-h][.)]\s*/, ''));
+    const options = optionTexts.map((t, i) => ({
+      letter: String.fromCharCode(65 + i),
+      text: t,
+    }));
+    const answer = el('addq-answer').value.split(',')
+      .map((s) => s.trim().toUpperCase()).filter(Boolean);
+    const explanation = el('addq-explanation').value.trim();
+
+    if (!text) return fail('Question text is required.');
+    if (options.length < 2) return fail('At least 2 options are required (one per line).');
+    const validLetters = new Set(options.map((o) => o.letter));
+    if (answer.length === 0 || !answer.every((a) => validLetters.has(a))) {
+      return fail(`Answer must be letter(s) between A and ${options[options.length - 1].letter}, e.g. "B" or "A,C".`);
+    }
+
+    const set = QuizStore.addQuestion(currentSetId, {
+      text,
+      options,
+      answer,
+      multiple: answer.length > 1,
+      explanation: explanation || null,
+    });
+    if (!set) return fail('This question set no longer exists — reload or re-upload it first.');
+
+    // Refresh everything that shows question counts.
+    activateSet(set, parseReport ? parseReport.skipped : []);
+    renderHistory();
+    el('add-q-dialog').close();
+    ['addq-text', 'addq-options', 'addq-answer', 'addq-explanation']
+      .forEach((id) => { el(id).value = ''; });
+  }
+
+  el('btn-add-question').addEventListener('click', openAddQuestion);
+  el('btn-addq-save').addEventListener('click', saveNewQuestion);
+  el('btn-close-addq').addEventListener('click', () => el('add-q-dialog').close());
 
   // ------------------------------------------------ parse report dialog ----
 
@@ -222,8 +347,12 @@
     fileInput.value = '';
     parsedQuestions = [];
     parseReport = null;
+    currentSetId = null;
     summaryBox.hidden = true;
     clearStatus();
+    renderHistory();
     QuizEngine.show('screen-upload');
   });
+
+  renderHistory(); // show saved sets as soon as the page opens
 })();

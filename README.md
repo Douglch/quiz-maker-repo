@@ -38,13 +38,20 @@ build step, free to host on GitHub Pages.
    report"** button shows exactly which questions parsed (with an `OCR`
    badge if the fallback rescued them), which were skipped and why, and
    which numbers were never detected at all.
-4. You pick how many questions and whether to shuffle, then take the quiz.
+4. Every successfully parsed upload is **saved to history** (browser
+   `localStorage`), listed under "Saved question sets" on the upload screen.
+   From there you can instantly **Load** a set without the original file,
+   **Rename** it, **Delete** it, or **➕ Add question** to hand-write extra
+   MCQs (question text, options one-per-line, answer letters, optional
+   explanation). Re-uploading a file with the same name updates its existing
+   set rather than duplicating it.
+5. You pick how many questions and whether to shuffle, then take the quiz.
    Each question is timed overall (a running stopwatch), and submitting an
    answer immediately reveals whether you were right, highlights the correct
    choice(s), and shows any explanation text found near the question.
-5. At the end you get a score, total time, and a full review of every
+6. At the end you get a score, total time, and a full review of every
    question with your answer vs. the correct one.
-6. You can save each attempt to a **local leaderboard**: enter a name and
+7. You can save each attempt to a **local leaderboard**: enter a name and
    your score, time, quiz file, and date are recorded — ranked by score %
    then speed. Records live in your browser's `localStorage` only (nothing
    is uploaded; "Clear all records" wipes them).
@@ -120,6 +127,7 @@ styles.css           All styling (light + dark mode)
 js/textExtract.js     File → raw text (PDF via pdf.js + OCR fallback, DOCX via mammoth,
                       TXT passthrough, images via Tesseract OCR)
 js/quizParser.js       Raw text → structured question objects
+js/quizStore.js        Saved question-set history (localStorage): load/rename/delete/add
 js/quizEngine.js       Timer, question rendering, scoring, results/review
 js/leaderboard.js      Local attempt records (localStorage) + leaderboard table
 js/main.js             Upload flow, OCR-recovery merge, parse report dialog
