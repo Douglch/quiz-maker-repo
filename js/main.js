@@ -1,10 +1,10 @@
-// main.js — wires the upload screen to the parser and hands off to QuizEngine.
+// main.js — wires the upload screen to the extractor/parser and hands off
+// to QuizEngine. All state here is just "the questions from the last file".
 
 (function () {
   const el = (id) => document.getElementById(id);
 
   let parsedQuestions = [];
-  let skippedQuestions = [];
 
   const fileInput = el('file-input');
   const dropzone = el('dropzone');
@@ -28,12 +28,13 @@
     setStatus(`Reading ${file.name}…`, false);
 
     try {
-      const rawText = await TextExtract.extract(file);
+      // Extraction can be slow (OCR of a scanned PDF takes seconds per
+      // page), so it reports progress back into the status box.
+      const rawText = await TextExtract.extract(file, (msg) => setStatus(msg, false));
       setStatus(`Parsing questions from ${file.name}…`, false);
 
       const { questions, skipped } = QuizParser.parse(rawText);
       parsedQuestions = questions;
-      skippedQuestions = skipped;
 
       if (questions.length === 0) {
         setStatus(
@@ -59,8 +60,20 @@
     }
   }
 
+  // Reads the current option controls and starts (or restarts) the quiz.
+  function startQuiz() {
+    const limit = Math.max(1, Math.min(parsedQuestions.length,
+      Number(el('opt-limit').value) || parsedQuestions.length));
+    QuizEngine.start(parsedQuestions, {
+      shuffleQuestions: el('opt-shuffle-q').checked,
+      shuffleAnswers: el('opt-shuffle-a').checked,
+      limit,
+    });
+  }
+
   fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
 
+  // Drag & drop is just a second way to feed handleFile.
   dropzone.addEventListener('dragover', (e) => {
     e.preventDefault();
     dropzone.classList.add('dragover');
@@ -76,28 +89,12 @@
     }
   });
 
-  el('btn-start').addEventListener('click', () => {
-    const limit = Math.max(1, Math.min(parsedQuestions.length, Number(el('opt-limit').value) || parsedQuestions.length));
-    QuizEngine.start(parsedQuestions, {
-      shuffleQuestions: el('opt-shuffle-q').checked,
-      shuffleAnswers: el('opt-shuffle-a').checked,
-      limit,
-    });
-  });
-
-  el('btn-restart-same').addEventListener('click', () => {
-    const limit = Math.max(1, Math.min(parsedQuestions.length, Number(el('opt-limit').value) || parsedQuestions.length));
-    QuizEngine.start(parsedQuestions, {
-      shuffleQuestions: el('opt-shuffle-q').checked,
-      shuffleAnswers: el('opt-shuffle-a').checked,
-      limit,
-    });
-  });
+  el('btn-start').addEventListener('click', startQuiz);
+  el('btn-restart-same').addEventListener('click', startQuiz);
 
   el('btn-restart-new').addEventListener('click', () => {
     fileInput.value = '';
     parsedQuestions = [];
-    skippedQuestions = [];
     summaryBox.hidden = true;
     clearStatus();
     QuizEngine.show('screen-upload');

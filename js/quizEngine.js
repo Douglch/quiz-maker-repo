@@ -8,6 +8,7 @@ const QuizEngine = (function () {
 
   let state = null; // { questions, currentIndex, answers, startTime, timerHandle }
 
+  // Fisher–Yates shuffle on a copy (never mutates the input).
   function shuffle(arr) {
     const a = arr.slice();
     for (let i = a.length - 1; i > 0; i--) {
@@ -26,8 +27,12 @@ const QuizEngine = (function () {
     return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
   }
 
-  // parsedQuestions: array from QuizParser (letter-based answer keys).
-  // opts: { shuffleQuestions, shuffleAnswers, limit }
+  // "B. Some choice text" — used for feedback and the review screen.
+  const optionLabel = (o) => `${o.letter}. ${o.text}`;
+
+  // Converts parser output (letter-keyed answers) into the engine's shape
+  // (per-option `correct` flags), applying shuffle/limit options. Marking
+  // correctness on each option means shuffling can't break the answer key.
   function buildQuizQuestions(parsedQuestions, opts) {
     let pool = parsedQuestions.map((q) => ({
       number: q.number,
@@ -40,11 +45,10 @@ const QuizEngine = (function () {
     if (opts.shuffleQuestions) pool = shuffle(pool);
     if (opts.limit && opts.limit > 0) pool = pool.slice(0, opts.limit);
 
+    // Re-letter options A, B, C… in their final (possibly shuffled) order.
     for (const q of pool) {
-      let options = q.options;
-      if (opts.shuffleAnswers) options = shuffle(options);
-      options.forEach((o, i) => { o.letter = String.fromCharCode(65 + i); });
-      q.options = options;
+      if (opts.shuffleAnswers) q.options = shuffle(q.options);
+      q.options.forEach((o, i) => { o.letter = String.fromCharCode(65 + i); });
     }
     return pool;
   }
@@ -75,6 +79,14 @@ const QuizEngine = (function () {
     el('quiz-timer').textContent = formatTime(Date.now() - state.startTime);
   }
 
+  function optionInputs() {
+    return Array.from(el('options-form').querySelectorAll('input'));
+  }
+
+  function optionLabels() {
+    return Array.from(el('options-form').querySelectorAll('label.option'));
+  }
+
   function renderQuestion() {
     const { questions, currentIndex } = state;
     const q = questions[currentIndex];
@@ -84,15 +96,15 @@ const QuizEngine = (function () {
     el('progress-bar-fill').style.width = `${(currentIndex / total) * 100}%`;
     el('question-text').textContent = `${currentIndex + 1}. ${q.text}`;
 
-    const correctCount = q.options.filter((o) => o.correct).length;
     const multiHint = el('multi-hint');
+    multiHint.hidden = !q.multiple;
     if (q.multiple) {
-      multiHint.hidden = false;
+      const correctCount = q.options.filter((o) => o.correct).length;
       multiHint.textContent = `Select all that apply (${correctCount} correct answers)`;
-    } else {
-      multiHint.hidden = true;
     }
 
+    // Build one <label><input><span> row per option. Checkboxes for
+    // multi-answer questions, radios otherwise.
     const form = el('options-form');
     form.innerHTML = '';
     q.options.forEach((opt, i) => {
@@ -104,9 +116,8 @@ const QuizEngine = (function () {
       input.value = String(i);
       input.addEventListener('change', updateSubmitEnabled);
       const span = document.createElement('span');
-      span.textContent = `${opt.letter}. ${opt.text}`;
-      label.appendChild(input);
-      label.appendChild(span);
+      span.textContent = optionLabel(opt);
+      label.append(input, span);
       form.appendChild(label);
     });
 
@@ -118,17 +129,17 @@ const QuizEngine = (function () {
     el('btn-next').textContent = currentIndex === total - 1 ? 'See Results 🏁' : 'Next Question ▶';
   }
 
+  // Submit stays disabled until at least one option is picked.
   function updateSubmitEnabled() {
-    const anyChecked = Array.from(el('options-form').elements['quiz-option'] || [])
-      .some((input) => input.checked);
-    el('btn-submit').disabled = !anyChecked;
+    el('btn-submit').disabled = !optionInputs().some((input) => input.checked);
   }
 
   function submitAnswer() {
     const q = state.questions[state.currentIndex];
-    const inputs = Array.from(el('options-form').elements['quiz-option']);
+    const inputs = optionInputs();
     const selected = inputs.filter((i) => i.checked).map((i) => Number(i.value));
 
+    // Correct = the selected set exactly matches the correct set.
     const correctIndices = q.options.map((o, i) => (o.correct ? i : -1)).filter((i) => i >= 0);
     const isCorrect =
       selected.length === correctIndices.length &&
@@ -136,10 +147,10 @@ const QuizEngine = (function () {
 
     state.answers[state.currentIndex] = { selected, correct: isCorrect };
 
-    const labels = form_labels();
-    labels.forEach((label, i) => {
-      const input = inputs[i];
-      input.disabled = true;
+    // Lock the options and color them: green for correct choices, red for
+    // wrong picks — this is the instant per-question feedback.
+    optionLabels().forEach((label, i) => {
+      inputs[i].disabled = true;
       label.classList.add('disabled');
       if (q.options[i].correct) label.classList.add('correct-answer');
       else if (selected.includes(i)) label.classList.add('wrong-answer');
@@ -150,8 +161,7 @@ const QuizEngine = (function () {
     feedback.className = `feedback ${isCorrect ? 'correct' : 'wrong'}`;
     let msg = isCorrect ? '✅ Correct!' : '❌ Incorrect.';
     if (!isCorrect) {
-      const correctText = correctIndices.map((i) => `${q.options[i].letter}. ${q.options[i].text}`).join('; ');
-      msg += `\nCorrect answer: ${correctText}`;
+      msg += `\nCorrect answer: ${correctIndices.map((i) => optionLabel(q.options[i])).join('; ')}`;
     }
     feedback.textContent = msg;
     if (q.explanation) {
@@ -163,10 +173,6 @@ const QuizEngine = (function () {
 
     el('btn-submit').hidden = true;
     el('btn-next').hidden = false;
-  }
-
-  function form_labels() {
-    return Array.from(el('options-form').querySelectorAll('label.option'));
   }
 
   function nextQuestion() {
@@ -190,6 +196,7 @@ const QuizEngine = (function () {
     el('score-pct').textContent = `${Math.round((scored / total) * 100)}%`;
     el('score-time').textContent = `Completed in ${formatTime(elapsed)}`;
 
+    // Full review: every question, your answer, and (if wrong) the right one.
     const reviewList = el('review-list');
     reviewList.innerHTML = '';
     state.questions.forEach((q, idx) => {
@@ -203,7 +210,7 @@ const QuizEngine = (function () {
       item.appendChild(qDiv);
 
       const yourText = answer && answer.selected.length
-        ? answer.selected.map((i) => `${q.options[i].letter}. ${q.options[i].text}`).join('; ')
+        ? answer.selected.map((i) => optionLabel(q.options[i])).join('; ')
         : '(no answer)';
       const yourLine = document.createElement('div');
       yourLine.className = `review-line ${answer && answer.correct ? 'you-correct' : 'you-wrong'}`;
@@ -211,20 +218,15 @@ const QuizEngine = (function () {
       item.appendChild(yourLine);
 
       if (!answer || !answer.correct) {
-        const correctText = q.options.filter((o) => o.correct)
-          .map((o) => `${o.letter}. ${o.text}`).join('; ');
         const correctLine = document.createElement('div');
         correctLine.className = 'review-line correct-line';
-        correctLine.textContent = `Correct answer: ${correctText}`;
+        correctLine.textContent =
+          `Correct answer: ${q.options.filter((o) => o.correct).map(optionLabel).join('; ')}`;
         item.appendChild(correctLine);
       }
 
       reviewList.appendChild(item);
     });
-  }
-
-  function getLastQuestions() {
-    return state ? state.questions : null;
   }
 
   el('btn-submit').addEventListener('click', submitAnswer);

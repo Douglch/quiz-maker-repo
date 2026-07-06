@@ -20,11 +20,11 @@
   <section id="screen-upload" class="screen">
     <div class="card">
       <label class="dropzone" id="dropzone" for="file-input">
-        <input type="file" id="file-input" accept=".pdf,.docx,.txt" hidden />
+        <input type="file" id="file-input" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp,.bmp" hidden />
         <div class="dropzone-inner">
           <div class="dropzone-icon">📄</div>
           <div><strong>Click to choose a file</strong> or drag one here</div>
-          <div class="hint">Supports .pdf, .docx, .txt</div>
+          <div class="hint">Supports .pdf, .docx, .txt, and images (.png/.jpg) — scanned PDFs are OCR'd automatically</div>
         </div>
       </label>
 
@@ -60,6 +60,8 @@ Explanation: optional text...</pre>
         <p>Multi-answer questions ("Answer: A,B,G") become checkbox questions automatically.
            Anything that doesn't match this pattern (e.g. drag-and-drop / hotspot items) is skipped and listed separately.
            All parsing happens locally in your browser — no file is uploaded anywhere.</p>
+        <p>If a PDF has no selectable text (scanned pages or outlined fonts), each page is
+           rendered and read with OCR (Tesseract.js) — slower, and accuracy depends on scan quality.</p>
       </details>
     </div>
   </section>
@@ -108,6 +110,7 @@ Explanation: optional text...</pre>
 
 <script src="vendor/pdfjs/pdf.min.js"></script>
 <script src="vendor/mammoth/mammoth.browser.min.js"></script>
+<script src="vendor/tesseract/tesseract.min.js"></script>
 <script src="js/quizParser.js"></script>
 <script src="js/textExtract.js"></script>
 <script src="js/quizEngine.js"></script>

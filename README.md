@@ -9,8 +9,12 @@ build step, free to host on GitHub Pages.
 1. You upload a file. It's parsed **locally in your browser** — nothing is
    uploaded to a server.
    - **PDF** → text is extracted with [pdf.js](https://mozilla.github.io/pdf.js/).
+     If the PDF has no usable text layer (scanned pages, outlined fonts),
+     it automatically falls back to OCR — see below.
    - **DOCX** → text is extracted with [mammoth.js](https://github.com/mturnley/mammoth.js).
    - **TXT** → read as-is.
+   - **PNG / JPG / WEBP / BMP** → read with OCR
+     ([Tesseract.js](https://tesseract.projectnaptha.com/)).
 2. The extracted text is scanned for this pattern (the common exam-dump layout):
 
    ```
@@ -61,30 +65,51 @@ Then open the printed local URL.
 No further configuration needed — `pdf.js` and `mammoth.js` are vendored
 locally under `vendor/` (see below), so the whole site is self-contained.
 
-## Known limitation: PDFs with no real text layer
+## OCR: PDFs with no real text layer
 
 Some PDFs — especially ones deliberately exported from "exam dump" sites —
 have every character converted to vector outline paths instead of real,
-selectable text (a common anti-copy/anti-scraping measure). No text-layer
-extractor, including pdf.js, can read text out of a file like that; it would
-require OCR (rendering each page to an image and recognizing characters),
-which this app does not currently do. If you upload a file like this, you'll
-see an error saying no text could be extracted. Workarounds:
+selectable text (a common anti-copy/anti-scraping measure), or are simply
+scans of paper pages. No text-layer extractor, including pdf.js, can read
+text out of files like that.
 
-- Use the DOCX or a plain-text version of the same content instead, if you have one.
-- Copy/paste the questions into a `.txt` file in the format shown above.
+For these, the app falls back to **OCR, entirely in the browser**: if the
+text layer averages fewer than ~30 characters per page, each page is
+rendered to a canvas at 2× scale with pdf.js and recognized with
+[Tesseract.js](https://tesseract.projectnaptha.com/) (WASM build of the
+Tesseract OCR engine).
+
+**Design decision — why OCR the rendered pages instead of converting the PDF
+to another format first?** Any PDF → image/DOCX conversion step would need
+either a server or an external tool, breaking the "free, static, GitHub
+Pages" constraint. pdf.js can already rasterize pages in the browser, so
+rendering + OCR keeps the whole pipeline client-side with zero extra steps
+for the user.
+
+Things to know about the OCR path:
+
+- **It's slower** — a few seconds per page; a progress message shows which
+  page it's on.
+- **First OCR run loads ~15 MB** (WASM engine + English language model,
+  both self-hosted under `vendor/tesseract/`); the browser caches them
+  afterwards, and the OCR worker is reused across files in the same session.
+- **Accuracy depends on scan quality.** Questions that come out garbled
+  usually just fail to match the parser pattern and show up as "skipped"
+  rather than as wrong quiz content.
 
 ## Project structure
 
 ```
 index.html          Upload / quiz / results screens
 styles.css           All styling (light + dark mode)
-js/textExtract.js     File → raw text (PDF via pdf.js, DOCX via mammoth, TXT passthrough)
+js/textExtract.js     File → raw text (PDF via pdf.js + OCR fallback, DOCX via mammoth,
+                      TXT passthrough, images via Tesseract OCR)
 js/quizParser.js       Raw text → structured question objects
 js/quizEngine.js       Timer, question rendering, scoring, results/review
 js/main.js             Wires the upload screen to the parser and quiz engine
 vendor/pdfjs/          Self-hosted pdf.js build + worker (must be same-origin as the page)
 vendor/mammoth/        Self-hosted mammoth.js browser build
+vendor/tesseract/      Self-hosted Tesseract.js v5 + WASM cores + eng.traineddata.gz
 ```
 
 ### Adding support for another file type
