@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quiz Maker — Turn any doc into a timed quiz</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%9D%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <header class="app-header">
+    <h1>📝 Quiz Maker</h1>
+    <p class="subtitle">Upload a PDF or Word doc of practice questions, and take it as a timed, self-graded quiz.</p>
+  </header>
+
+  <!-- ===================== UPLOAD / SETUP SCREEN ===================== -->
+  <section id="screen-upload" class="screen">
+    <div class="card">
+      <label class="dropzone" id="dropzone" for="file-input">
+        <input type="file" id="file-input" accept=".pdf,.docx,.txt" hidden />
+        <div class="dropzone-inner">
+          <div class="dropzone-icon">📄</div>
+          <div><strong>Click to choose a file</strong> or drag one here</div>
+          <div class="hint">Supports .pdf, .docx, .txt</div>
+        </div>
+      </label>
+
+      <div id="parse-status" class="status" hidden></div>
+
+      <div id="parse-summary" class="summary" hidden>
+        <div class="summary-row"><span id="summary-count">0</span> questions parsed and ready</div>
+        <div class="summary-row muted" id="summary-skipped"></div>
+
+        <div class="options-row">
+          <label><input type="checkbox" id="opt-shuffle-q" checked /> Shuffle question order</label>
+          <label><input type="checkbox" id="opt-shuffle-a" /> Shuffle answer order</label>
+        </div>
+        <div class="options-row">
+          <label for="opt-limit">Number of questions:</label>
+          <input type="number" id="opt-limit" min="1" value="1" style="width:5em" />
+          <span class="hint" id="opt-limit-max"></span>
+        </div>
+
+        <button id="btn-start" class="btn btn-primary">Start Quiz ▶</button>
+      </div>
+
+      <details class="how-it-works">
+        <summary>How question parsing works</summary>
+        <p>The parser looks for the common exam-dump pattern:</p>
+        <pre>1. Question text here?
+A. Choice one
+B. Choice two
+C. Choice three
+D. Choice four
+Answer: D
+Explanation: optional text...</pre>
+        <p>Multi-answer questions ("Answer: A,B,G") become checkbox questions automatically.
+           Anything that doesn't match this pattern (e.g. drag-and-drop / hotspot items) is skipped and listed separately.
+           All parsing happens locally in your browser — no file is uploaded anywhere.</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- ===================== QUIZ SCREEN ===================== -->
+  <section id="screen-quiz" class="screen" hidden>
+    <div class="card">
+      <div class="quiz-top">
+        <div class="progress" id="quiz-progress">Question 1 of 1</div>
+        <div class="timer" id="quiz-timer">00:00</div>
+      </div>
+      <div class="progress-bar"><div class="progress-bar-fill" id="progress-bar-fill"></div></div>
+
+      <h2 class="question-text" id="question-text"></h2>
+      <div class="multi-hint" id="multi-hint" hidden></div>
+
+      <form id="options-form" class="options-list"></form>
+
+      <div id="feedback" class="feedback" hidden></div>
+
+      <div class="quiz-actions">
+        <button id="btn-submit" class="btn btn-primary">Submit Answer</button>
+        <button id="btn-next" class="btn btn-primary" hidden>Next Question ▶</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== RESULTS SCREEN ===================== -->
+  <section id="screen-results" class="screen" hidden>
+    <div class="card">
+      <h2>Quiz Complete 🎉</h2>
+      <div class="score-big" id="score-big">0 / 0</div>
+      <div class="score-sub" id="score-pct"></div>
+      <div class="score-sub" id="score-time"></div>
+
+      <div id="review-list" class="review-list"></div>
+
+      <div class="quiz-actions">
+        <button id="btn-restart-same" class="btn btn-secondary">Retake This Quiz</button>
+        <button id="btn-restart-new" class="btn btn-primary">Upload New File</button>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script src="vendor/pdfjs/pdf.min.js"></script>
+<script src="vendor/mammoth/mammoth.browser.min.js"></script>
+<script src="js/quizParser.js"></script>
+<script src="js/textExtract.js"></script>
+<script src="js/quizEngine.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
