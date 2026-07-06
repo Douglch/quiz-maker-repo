@@ -57,6 +57,7 @@ const QuizEngine = (function () {
     const questions = buildQuizQuestions(parsedQuestions, opts);
     state = {
       questions,
+      quizName: opts.quizName || '',
       currentIndex: 0,
       answers: new Array(questions.length).fill(null),
       startTime: Date.now(),
@@ -196,6 +197,13 @@ const QuizEngine = (function () {
     el('score-pct').textContent = `${Math.round((scored / total) * 100)}%`;
     el('score-time').textContent = `Completed in ${formatTime(elapsed)}`;
 
+    // Hand the result to the leaderboard so the user can save this attempt.
+    if (typeof Leaderboard !== 'undefined') {
+      Leaderboard.onQuizFinished({
+        quizName: state.quizName, score: scored, total, timeMs: elapsed,
+      });
+    }
+
     // Full review: every question, your answer, and (if wrong) the right one.
     const reviewList = el('review-list');
     reviewList.innerHTML = '';
@@ -232,5 +240,5 @@ const QuizEngine = (function () {
   el('btn-submit').addEventListener('click', submitAnswer);
   el('btn-next').addEventListener('click', nextQuestion);
 
-  return { start, show };
+  return { start, show, formatTime };
 })();

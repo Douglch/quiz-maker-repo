@@ -32,7 +32,10 @@
 
       <div id="parse-summary" class="summary" hidden>
         <div class="summary-row"><span id="summary-count">0</span> questions parsed and ready</div>
-        <div class="summary-row muted" id="summary-skipped"></div>
+        <div class="summary-row muted" id="summary-detail"></div>
+        <div class="summary-row">
+          <button id="btn-view-questions" class="btn btn-secondary btn-small">🔍 View parse report</button>
+        </div>
 
         <div class="options-row">
           <label><input type="checkbox" id="opt-shuffle-q" checked /> Shuffle question order</label>
@@ -97,6 +100,19 @@ Explanation: optional text...</pre>
       <div class="score-sub" id="score-pct"></div>
       <div class="score-sub" id="score-time"></div>
 
+      <!-- Local leaderboard: attempts saved in localStorage, never uploaded -->
+      <div class="leaderboard">
+        <h3>🏆 Leaderboard <span class="hint">(saved only on this computer)</span></h3>
+        <div id="lb-save-row" class="options-row">
+          <label for="lb-name">Your name:</label>
+          <input type="text" id="lb-name" maxlength="24" placeholder="Anonymous" />
+          <button id="btn-lb-save" class="btn btn-primary btn-small">Save my attempt</button>
+        </div>
+        <div id="lb-saved-msg" class="hint" hidden>Attempt saved ✔</div>
+        <div id="lb-table"></div>
+        <button id="btn-lb-clear" class="btn btn-secondary btn-small" hidden>Clear all records</button>
+      </div>
+
       <div id="review-list" class="review-list"></div>
 
       <div class="quiz-actions">
@@ -108,12 +124,22 @@ Explanation: optional text...</pre>
 
 </div>
 
+<!-- Parse report popout: which questions parsed, which didn't (text only) -->
+<dialog id="parse-dialog">
+  <div class="dialog-head">
+    <h3>Parse report</h3>
+    <button id="btn-close-dialog" class="btn btn-secondary btn-small">Close ✕</button>
+  </div>
+  <div id="parse-dialog-body"></div>
+</dialog>
+
 <script src="vendor/pdfjs/pdf.min.js"></script>
 <script src="vendor/mammoth/mammoth.browser.min.js"></script>
 <script src="vendor/tesseract/tesseract.min.js"></script>
 <script src="js/quizParser.js"></script>
 <script src="js/textExtract.js"></script>
 <script src="js/quizEngine.js"></script>
+<script src="js/leaderboard.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

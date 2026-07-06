@@ -35,8 +35,11 @@ const QuizParser = (function () {
     const threshold = Math.max(3, Math.floor(lines.length / 40));
     const noisy = new Set();
     for (const [l, count] of freq.entries()) {
-      // Short, frequently repeated, non-question-like lines are boilerplate.
-      if (count >= threshold && l.length < 120 && !QUESTION_START.test(l) && !OPTION_START.test(l)) {
+      // Short, frequently repeated lines are boilerplate — unless they look
+      // like question/option/answer content, which legitimately repeats
+      // (e.g. "Answer: B" appears ~50 times in a 200-question dump).
+      if (count >= threshold && l.length < 120 &&
+          !QUESTION_START.test(l) && !OPTION_START.test(l) && !ANSWER_LINE.test(l)) {
         noisy.add(l);
       }
     }

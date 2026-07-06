@@ -142,10 +142,17 @@ const TextExtract = (function () {
 
     const text = await extractPdfTextLayer(pdf);
     const meaningfulChars = text.replace(/\s/g, '').length;
-    if (meaningfulChars >= MIN_CHARS_PER_PAGE * pdf.numPages) return text;
 
-    if (onProgress) onProgress('No usable text layer — looks scanned. Starting OCR (first run downloads the OCR engine)…');
-    return ocrPdf(pdf, onProgress);
+    if (meaningfulChars < MIN_CHARS_PER_PAGE * pdf.numPages) {
+      // No usable text layer at all: OCR is the only option, run it now.
+      if (onProgress) onProgress('No usable text layer — looks scanned. Starting OCR (first run downloads the OCR engine)…');
+      return { text: await ocrPdf(pdf, onProgress), runOcr: null };
+    }
+
+    // The text layer looks healthy, but it may still parse incompletely
+    // (e.g. some questions rendered as images). Hand back a deferred OCR
+    // pass so the caller can run it only if parsing leaves gaps.
+    return { text, runOcr: (op) => ocrPdf(pdf, op) };
   }
 
   // -------------------------------------------------------- other types ----
@@ -179,19 +186,23 @@ const TextExtract = (function () {
     return parts.length > 1 ? parts.pop() : '';
   }
 
-  // Public entry point. onProgress (optional) receives human-readable status
-  // strings for slow steps like OCR.
+  // Public entry point. Returns { text, runOcr } where runOcr is either null
+  // or an async fallback the caller can invoke for a second, OCR-based pass
+  // over the same document (PDFs with a text layer only). onProgress
+  // (optional) receives human-readable status strings for slow steps.
   async function extract(file, onProgress) {
     const ext = extensionOf(file.name);
     const extractor = EXTRACTORS[ext];
     if (!extractor) {
       throw new Error(`Unsupported file type ".${ext}". Supported: ${Object.keys(EXTRACTORS).join(', ')}`);
     }
-    const text = await extractor(file, onProgress);
+    const result = await extractor(file, onProgress);
+    // Most extractors return a plain string; extractPdf returns { text, runOcr }.
+    const { text, runOcr } = typeof result === 'string' ? { text: result, runOcr: null } : result;
     if (!text || !text.trim()) {
       throw new Error('No text could be extracted from this file, even with OCR.');
     }
-    return text;
+    return { text, runOcr };
   }
 
   return { extract, supportedExtensions: Object.keys(EXTRACTORS) };
