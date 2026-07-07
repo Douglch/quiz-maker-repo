@@ -138,7 +138,10 @@ const TextExtract = (function () {
 
   async function extractPdf(file, onProgress) {
     const buffer = await readAsArrayBuffer(file);
-    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    // isEvalSupported: false — never let pdf.js eval() font programs from the
+    // document. Mitigates CVE-2024-4367 (arbitrary JS via a crafted font in a
+    // malicious PDF), which matters because users upload PDFs from anywhere.
+    const pdf = await pdfjsLib.getDocument({ data: buffer, isEvalSupported: false }).promise;
 
     const text = await extractPdfTextLayer(pdf);
     const meaningfulChars = text.replace(/\s/g, '').length;
