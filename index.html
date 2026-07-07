@@ -36,6 +36,7 @@
         <div class="summary-row">
           <button id="btn-view-questions" class="btn btn-secondary btn-small">🔍 View parse report</button>
           <button id="btn-add-question" class="btn btn-secondary btn-small">➕ Add question</button>
+          <button id="btn-export" class="btn btn-secondary btn-small">💾 Export</button>
         </div>
 
         <div class="options-row">
@@ -96,6 +97,7 @@ Explanation: optional text...</pre>
         <button id="btn-submit" class="btn btn-primary">Submit Answer</button>
         <button id="btn-next" class="btn btn-primary" hidden>Next Question ▶</button>
       </div>
+      <div class="hint kbd-hint">⌨️ Press 1–9 (or A–H) to pick an option · Enter or Space to confirm / advance</div>
     </div>
   </section>
 
@@ -137,6 +139,14 @@ Explanation: optional text...</pre>
     <h3>Parse report</h3>
     <button id="btn-close-dialog" class="btn btn-secondary btn-small">Close ✕</button>
   </div>
+  <div class="report-controls">
+    <div class="chip-group" id="report-filter">
+      <button class="chip active" data-filter="all">All</button>
+      <button class="chip" data-filter="parsed">✅ Parsed</button>
+      <button class="chip" data-filter="unparsed">⚠️ Not parsed</button>
+    </div>
+    <label class="split-toggle"><input type="checkbox" id="report-split" /> Side-by-side view</label>
+  </div>
   <div id="parse-dialog-body"></div>
 </dialog>
 
@@ -146,6 +156,7 @@ Explanation: optional text...</pre>
     <h3>Add a question</h3>
     <button id="btn-close-addq" class="btn btn-secondary btn-small">Close ✕</button>
   </div>
+  <div id="addq-set-name" class="hint"></div>
   <label class="field">Question text
     <textarea id="addq-text" rows="3" placeholder="What does the -r flag do?"></textarea>
   </label>
@@ -160,6 +171,22 @@ Explanation: optional text...</pre>
   </label>
   <div id="addq-error" class="status error" hidden></div>
   <button id="btn-addq-save" class="btn btn-primary">Add question ➕</button>
+</dialog>
+
+<!-- Export dialog: download a saved set as Markdown, plain text, or JSON -->
+<dialog id="export-dialog">
+  <div class="dialog-head">
+    <h3>Export question set</h3>
+    <button id="btn-close-export" class="btn btn-secondary btn-small">Close ✕</button>
+  </div>
+  <div id="export-set-name" class="hint"></div>
+  <div class="options-row export-formats">
+    <label><input type="radio" name="export-format" value="md" checked /> Markdown (.md)</label>
+    <label><input type="radio" name="export-format" value="txt" /> Plain text (.txt)</label>
+    <label><input type="radio" name="export-format" value="json" /> JSON (.json)</label>
+  </div>
+  <div class="hint">Plain text uses the same layout the parser reads, so an exported .txt can be re-uploaded later.</div>
+  <button id="btn-export-save" class="btn btn-primary">💾 Download</button>
 </dialog>
 
 <script src="vendor/pdfjs/pdf.min.js"></script>

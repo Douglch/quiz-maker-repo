@@ -9,6 +9,10 @@
   let parseReport = null;    // { questions, skipped, missing } for the dialog
   let currentQuizName = '';  // set name, shown on the leaderboard
   let currentSetId = null;   // active QuizStore set (for add/rename/delete)
+  let isParsing = false;     // one parse at a time — new uploads are blocked meanwhile
+  let addQuestionTargetId = null; // set the add-question dialog writes into
+  let exportTargetId = null;      // set the export dialog downloads
+  let reportFilter = 'all';       // parse report filter: all | parsed | unparsed
 
   const fileInput = el('file-input');
   const dropzone = el('dropzone');
@@ -68,6 +72,15 @@
 
   async function handleFile(file) {
     if (!file) return;
+    // One parse at a time: the status box, summary, and OCR pipeline are all
+    // shared, so a second upload mid-parse would clobber the first one's UI.
+    if (isParsing) {
+      setStatus('⏳ A file is already being parsed — wait for it to finish before uploading another.', true);
+      return;
+    }
+    isParsing = true;
+    fileInput.disabled = true;
+    dropzone.classList.add('busy');
     summaryBox.hidden = true;
     const progress = (msg) => setStatus(msg, false);
     progress(`Reading ${file.name}…`);
@@ -107,6 +120,10 @@
     } catch (err) {
       console.error(err);
       setStatus(`Error: ${err.message}`, true);
+    } finally {
+      isParsing = false;
+      fileInput.disabled = false;
+      dropzone.classList.remove('busy');
     }
   }
 
@@ -171,6 +188,8 @@
         actions.appendChild(b);
       };
       btn('Load ▶', 'btn-primary', () => activateSet(QuizStore.get(set.id)));
+      btn('➕ Add Q', 'btn-secondary', () => openAddQuestion(set.id, set.name));
+      btn('💾 Export', 'btn-secondary', () => openExport(set.id, set.name));
       btn('✏️ Rename', 'btn-secondary', () => {
         const newName = prompt('New name for this question set:', set.name);
         if (!newName || !newName.trim()) return;
@@ -197,7 +216,11 @@
 
   // ------------------------------------------------ add-question dialog ----
 
-  function openAddQuestion() {
+  // Opens the add-question form targeting a specific set — from the summary
+  // box (the active set) or any saved set's "Add Q" button in the history.
+  function openAddQuestion(setId, setName) {
+    addQuestionTargetId = setId;
+    el('addq-set-name').textContent = setName ? `Adding to: ${setName}` : '';
     el('addq-error').hidden = true;
     el('add-q-dialog').showModal();
   }
@@ -230,7 +253,7 @@
       return fail(`Answer must be letter(s) between A and ${options[options.length - 1].letter}, e.g. "B" or "A,C".`);
     }
 
-    const set = QuizStore.addQuestion(currentSetId, {
+    const set = QuizStore.addQuestion(addQuestionTargetId, {
       text,
       options,
       answer,
@@ -239,15 +262,16 @@
     });
     if (!set) return fail('This question set no longer exists — reload or re-upload it first.');
 
-    // Refresh everything that shows question counts.
-    activateSet(set, parseReport ? parseReport.skipped : []);
+    // Refresh everything that shows question counts. Only re-activate when
+    // the question went into the currently active set.
+    if (set.id === currentSetId) activateSet(set, parseReport ? parseReport.skipped : []);
     renderHistory();
     el('add-q-dialog').close();
     ['addq-text', 'addq-options', 'addq-answer', 'addq-explanation']
       .forEach((id) => { el(id).value = ''; });
   }
 
-  el('btn-add-question').addEventListener('click', openAddQuestion);
+  el('btn-add-question').addEventListener('click', () => openAddQuestion(currentSetId, currentQuizName));
   el('btn-addq-save').addEventListener('click', saveNewQuestion);
   el('btn-close-addq').addEventListener('click', () => el('add-q-dialog').close());
 
@@ -255,17 +279,19 @@
 
   // Lists every question's fate: parsed (with an OCR badge if the fallback
   // rescued it), skipped (with the reason), or missing entirely. Question
-  // text only — options are deliberately not shown.
-  function renderParseReport() {
-    const body = el('parse-dialog-body');
-    body.innerHTML = '';
-    if (!parseReport) return;
+  // text only — options are deliberately not shown. The list can be filtered
+  // (all / parsed / not parsed) or shown as two side-by-side columns.
+
+  // One "parsed" or "unparsed" column: heading(s) + item list.
+  function buildReportColumn(kind) {
     const { questions, skipped, missing } = parseReport;
+    const col = document.createElement('div');
+    col.className = 'report-col';
 
     const section = (title) => {
       const h = document.createElement('h4');
       h.textContent = title;
-      body.appendChild(h);
+      col.appendChild(h);
     };
     const item = (cls, label, text, badge) => {
       const div = document.createElement('div');
@@ -281,32 +307,128 @@
         div.appendChild(document.createTextNode(' '));
       }
       div.appendChild(document.createTextNode(text));
-      body.appendChild(div);
+      col.appendChild(div);
     };
 
-    section(`✅ Parsed (${questions.length})`);
-    questions.forEach((q) => {
-      item('parsed', `${q.number}.`, q.text, q.recoveredByOcr ? 'OCR' : null);
-    });
-
-    if (skipped.length) {
+    if (kind === 'parsed') {
+      section(`✅ Parsed (${questions.length})`);
+      questions.forEach((q) => {
+        item('parsed', `${q.number}.`, q.text, q.recoveredByOcr ? 'OCR' : null);
+      });
+      if (questions.length === 0) item('', '', 'No questions were parsed.');
+    } else {
       section(`⚠️ Skipped (${skipped.length})`);
       skipped.forEach((s) => {
         item('skipped', `${s.number}.`, `${s.questionPreview || '(no text captured)'} — ${s.reason}`);
       });
+      if (missing.length) {
+        section(`❓ Not detected at all (${missing.length})`);
+        item('skipped', '', `Question number(s) ${missing.join(', ')} were never seen by the parser ` +
+          '(possibly a non-MCQ item, or unreadable in both the text layer and OCR).');
+      }
+      if (skipped.length === 0 && missing.length === 0) {
+        item('', '', 'Nothing here — every question parsed cleanly. 🎉');
+      }
     }
-    if (missing.length) {
-      section(`❓ Not detected at all (${missing.length})`);
-      item('skipped', '', `Question number(s) ${missing.join(', ')} were never seen by the parser ` +
-        '(possibly a non-MCQ item, or unreadable in both the text layer and OCR).');
-    }
+    return col;
   }
+
+  function renderParseReport() {
+    const body = el('parse-dialog-body');
+    body.innerHTML = '';
+    if (!parseReport) return;
+
+    const split = el('report-split').checked;
+    el('parse-dialog').classList.toggle('split-mode', split);
+    body.classList.toggle('split', split);
+
+    // The filter only applies in single-column mode; split always shows both.
+    document.querySelectorAll('#report-filter .chip').forEach((b) => {
+      b.disabled = split;
+      b.classList.toggle('active', !split && b.dataset.filter === reportFilter);
+    });
+
+    if (split || reportFilter !== 'unparsed') body.appendChild(buildReportColumn('parsed'));
+    if (split || reportFilter !== 'parsed') body.appendChild(buildReportColumn('unparsed'));
+  }
+
+  document.querySelectorAll('#report-filter .chip').forEach((b) => {
+    b.addEventListener('click', () => {
+      reportFilter = b.dataset.filter;
+      renderParseReport();
+    });
+  });
+  el('report-split').addEventListener('change', renderParseReport);
 
   el('btn-view-questions').addEventListener('click', () => {
     renderParseReport();
     el('parse-dialog').showModal();
   });
   el('btn-close-dialog').addEventListener('click', () => el('parse-dialog').close());
+
+  // ------------------------------------------------------- export dialog ----
+
+  // Plain text mirrors the exact layout QuizParser reads, so an exported
+  // .txt file round-trips: it can be re-uploaded and parsed again.
+  function exportTxt(set) {
+    return set.questions.map((q) => {
+      const lines = [`${q.number}. ${q.text}`];
+      q.options.forEach((o) => lines.push(`${o.letter}. ${o.text}`));
+      lines.push(`Answer: ${q.answer.join(',')}`);
+      if (q.explanation) lines.push(`Explanation: ${q.explanation}`);
+      return lines.join('\n');
+    }).join('\n\n');
+  }
+
+  function exportMd(set) {
+    const out = [`# ${set.name}`];
+    set.questions.forEach((q) => {
+      out.push('', `### Question ${q.number}`, '', q.text, '');
+      q.options.forEach((o) => out.push(`- **${o.letter}.** ${o.text}`));
+      out.push('', `**Answer:** ${q.answer.join(', ')}`);
+      if (q.explanation) out.push('', `**Explanation:** ${q.explanation}`);
+    });
+    return out.join('\n') + '\n';
+  }
+
+  const EXPORTERS = {
+    md:   { build: exportMd, mime: 'text/markdown' },
+    txt:  { build: exportTxt, mime: 'text/plain' },
+    json: {
+      build: (set) => JSON.stringify({ name: set.name, questions: set.questions }, null, 2),
+      mime: 'application/json',
+    },
+  };
+
+  function openExport(setId, setName) {
+    exportTargetId = setId;
+    const set = QuizStore.get(setId);
+    el('export-set-name').textContent = set
+      ? `${setName} — ${set.questions.length} question(s)` : '';
+    el('export-dialog').showModal();
+  }
+
+  function downloadExport() {
+    const set = QuizStore.get(exportTargetId);
+    if (!set) return el('export-dialog').close();
+    const format = document.querySelector('input[name="export-format"]:checked').value;
+    const { build, mime } = EXPORTERS[format];
+
+    // "my quiz.pdf" -> "my quiz.md"; strip characters that break filenames.
+    const safeName = set.name.replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]+/g, '').trim() || 'questions';
+    const blob = new Blob([build(set)], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safeName}.${format}`;
+    a.click();
+    URL.revokeObjectURL(url);
+    el('export-dialog').close();
+  }
+
+  el('btn-export').addEventListener('click', () => openExport(currentSetId, currentQuizName));
+  el('btn-export-save').addEventListener('click', downloadExport);
+  el('btn-close-export').addEventListener('click', () => el('export-dialog').close());
 
   // ------------------------------------------------------ quiz controls ----
 

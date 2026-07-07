@@ -73,6 +73,8 @@ body {
   background: color-mix(in srgb, var(--primary) 6%, transparent);
 }
 .dropzone-icon { font-size: 2.4em; margin-bottom: 8px; }
+/* While a parse is running, the dropzone is visibly disabled */
+.dropzone.busy { opacity: 0.55; cursor: progress; pointer-events: none; }
 .hint { color: var(--muted); font-size: 0.9em; margin-top: 4px; }
 
 .status {
@@ -203,6 +205,7 @@ body {
 .feedback .explanation { display: block; margin-top: 10px; color: var(--text); font-weight: 400; }
 
 .quiz-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.kbd-hint { margin-top: 12px; }
 
 /* ---------- Results screen ---------- */
 .score-big { font-size: 2.6em; font-weight: 800; text-align: center; color: var(--primary); }
@@ -236,7 +239,9 @@ dialog {
   padding: 20px 24px;
   width: min(640px, 92vw);
   max-height: 80vh;
+  overflow-y: auto;
 }
+#parse-dialog.split-mode { width: min(1000px, 96vw); }
 dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .dialog-head {
   display: flex;
@@ -246,6 +251,50 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 }
 .dialog-head h3 { margin: 0; }
 #parse-dialog-body h4 { margin: 18px 0 6px; }
+
+/* Parse report filter chips + side-by-side toggle */
+.report-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 4px 0 10px;
+}
+.chip-group { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.85em;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.chip:disabled { opacity: 0.45; cursor: not-allowed; }
+.split-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+/* Side-by-side view: parsed on the left, not-parsed on the right */
+#parse-dialog-body.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+#parse-dialog-body.split .report-col {
+  min-width: 0;
+  max-height: 58vh;
+  overflow-y: auto;
+}
+#parse-dialog-body.split .report-col h4:first-child { margin-top: 6px; }
 .report-item {
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);

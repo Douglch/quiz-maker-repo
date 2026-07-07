@@ -237,6 +237,41 @@ const QuizEngine = (function () {
     });
   }
 
+  // Keyboard controls: 1–9 (or A–H) picks an option, Enter/Space confirms
+  // the answer or advances to the next question. Confirming does nothing
+  // while no option is selected (mirrors the disabled Submit button).
+  document.addEventListener('keydown', (e) => {
+    if (!state || el('screen-quiz').hidden) return;
+    if (document.querySelector('dialog[open]')) return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+
+    const inputs = optionInputs();
+    const answered = !el('btn-next').hidden; // feedback is showing
+
+    // Map "1"–"9" and "a"–"h" to an option index.
+    let idx = -1;
+    if (/^[1-9]$/.test(e.key)) idx = Number(e.key) - 1;
+    else if (/^[a-h]$/i.test(e.key)) idx = e.key.toUpperCase().charCodeAt(0) - 65;
+
+    if (idx >= 0) {
+      if (answered || idx >= inputs.length) return; // locked or no such option
+      const input = inputs[idx];
+      if (input.type === 'checkbox') input.checked = !input.checked;
+      else input.checked = true;
+      updateSubmitEnabled();
+      e.preventDefault();
+      return;
+    }
+
+    if (e.key === 'Enter' || e.key === ' ') {
+      // preventDefault so a focused option/button doesn't also fire natively
+      // (which would toggle a checkbox or double-trigger the button).
+      e.preventDefault();
+      if (answered) nextQuestion();
+      else if (!el('btn-submit').disabled) submitAnswer();
+    }
+  });
+
   el('btn-submit').addEventListener('click', submitAnswer);
   el('btn-next').addEventListener('click', nextQuestion);
 
