@@ -127,7 +127,7 @@ const QuizEngine = (function () {
     el('btn-submit').hidden = false;
     el('btn-submit').disabled = true;
     el('btn-next').hidden = true;
-    el('btn-next').textContent = currentIndex === total - 1 ? 'See Results 🏁' : 'Next Question ▶';
+    el('btn-next').textContent = currentIndex === total - 1 ? 'See results' : 'Next question';
   }
 
   // Submit stays disabled until at least one option is picked.
@@ -160,7 +160,7 @@ const QuizEngine = (function () {
     const feedback = el('feedback');
     feedback.hidden = false;
     feedback.className = `feedback ${isCorrect ? 'correct' : 'wrong'}`;
-    let msg = isCorrect ? '✅ Correct!' : '❌ Incorrect.';
+    let msg = isCorrect ? '✓ Correct' : '✗ Incorrect';
     if (!isCorrect) {
       msg += `\nCorrect answer: ${correctIndices.map((i) => optionLabel(q.options[i])).join('; ')}`;
     }

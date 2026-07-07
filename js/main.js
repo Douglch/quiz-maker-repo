@@ -75,7 +75,7 @@
     // One parse at a time: the status box, summary, and OCR pipeline are all
     // shared, so a second upload mid-parse would clobber the first one's UI.
     if (isParsing) {
-      setStatus('⏳ A file is already being parsed — wait for it to finish before uploading another.', true);
+      setStatus('A file is already being parsed — wait for it to finish before uploading another.', true);
       return;
     }
     isParsing = true;
@@ -187,17 +187,17 @@
         b.addEventListener('click', onClick);
         actions.appendChild(b);
       };
-      btn('Load ▶', 'btn-primary', () => activateSet(QuizStore.get(set.id)));
-      btn('➕ Add Q', 'btn-secondary', () => openAddQuestion(set.id, set.name));
-      btn('💾 Export', 'btn-secondary', () => openExport(set.id, set.name));
-      btn('✏️ Rename', 'btn-secondary', () => {
+      btn('Load', 'btn-primary', () => activateSet(QuizStore.get(set.id)));
+      btn('Add question', 'btn-secondary', () => openAddQuestion(set.id, set.name));
+      btn('Export', 'btn-secondary', () => openExport(set.id, set.name));
+      btn('Rename', 'btn-secondary', () => {
         const newName = prompt('New name for this question set:', set.name);
         if (!newName || !newName.trim()) return;
         const renamed = QuizStore.rename(set.id, newName);
         if (renamed && set.id === currentSetId) currentQuizName = renamed.name;
         renderHistory();
       });
-      btn('🗑 Delete', 'btn-secondary', () => {
+      btn('Delete', 'btn-secondary', () => {
         if (!confirm(`Delete "${set.name}" (${set.questions.length} questions)?`)) return;
         QuizStore.remove(set.id);
         if (set.id === currentSetId) {
@@ -311,23 +311,23 @@
     };
 
     if (kind === 'parsed') {
-      section(`✅ Parsed (${questions.length})`);
+      section(`Parsed (${questions.length})`);
       questions.forEach((q) => {
         item('parsed', `${q.number}.`, q.text, q.recoveredByOcr ? 'OCR' : null);
       });
       if (questions.length === 0) item('', '', 'No questions were parsed.');
     } else {
-      section(`⚠️ Skipped (${skipped.length})`);
+      section(`Skipped (${skipped.length})`);
       skipped.forEach((s) => {
         item('skipped', `${s.number}.`, `${s.questionPreview || '(no text captured)'} — ${s.reason}`);
       });
       if (missing.length) {
-        section(`❓ Not detected at all (${missing.length})`);
+        section(`Not detected at all (${missing.length})`);
         item('skipped', '', `Question number(s) ${missing.join(', ')} were never seen by the parser ` +
           '(possibly a non-MCQ item, or unreadable in both the text layer and OCR).');
       }
       if (skipped.length === 0 && missing.length === 0) {
-        item('', '', 'Nothing here — every question parsed cleanly. 🎉');
+        item('', '', 'Nothing here — every question parsed cleanly.');
       }
     }
     return col;
