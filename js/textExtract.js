@@ -97,13 +97,21 @@ const TextExtract = (function () {
     return pageTexts.join('\n');
   }
 
-  // Direct image upload (photo/screenshot of questions) — pure OCR.
-  async function extractImage(file, onProgress) {
-    const worker = await getOcrWorker();
-    reportOcrProgress(onProgress, `OCR: reading ${file.name}`);
-    const { data } = await worker.recognize(file);
-    activeLogger = null;
-    return data.text;
+  // Direct image upload (photo/screenshot of questions) — OCR is the only
+  // way to read pixels, but the pass is deferred so the caller can get the
+  // user's go-ahead first (OCR is slow).
+  function extractImage(file) {
+    return {
+      text: '',
+      ocrRequired: true,
+      runOcr: async (onProgress) => {
+        const worker = await getOcrWorker();
+        reportOcrProgress(onProgress, `OCR: reading ${file.name}`);
+        const { data } = await worker.recognize(file);
+        activeLogger = null;
+        return data.text;
+      },
+    };
   }
 
   // ---------------------------------------------------------------- PDF ----
@@ -146,16 +154,14 @@ const TextExtract = (function () {
     const text = await extractPdfTextLayer(pdf);
     const meaningfulChars = text.replace(/\s/g, '').length;
 
-    if (meaningfulChars < MIN_CHARS_PER_PAGE * pdf.numPages) {
-      // No usable text layer at all: OCR is the only option, run it now.
-      if (onProgress) onProgress('No usable text layer — looks scanned. Starting OCR (first run downloads the OCR engine)…');
-      return { text: await ocrPdf(pdf, onProgress), runOcr: null };
-    }
-
-    // The text layer looks healthy, but it may still parse incompletely
-    // (e.g. some questions rendered as images). Hand back a deferred OCR
-    // pass so the caller can run it only if parsing leaves gaps.
-    return { text, runOcr: (op) => ocrPdf(pdf, op) };
+    // A thin or absent text layer means the PDF is likely scanned and OCR is
+    // the only way to read it — but OCR is never started here. The caller
+    // owns that decision (it asks the user first, since OCR is slow).
+    return {
+      text,
+      runOcr: (op) => ocrPdf(pdf, op),
+      ocrRequired: meaningfulChars < MIN_CHARS_PER_PAGE * pdf.numPages,
+    };
   }
 
   // -------------------------------------------------------- other types ----
@@ -189,10 +195,13 @@ const TextExtract = (function () {
     return parts.length > 1 ? parts.pop() : '';
   }
 
-  // Public entry point. Returns { text, runOcr } where runOcr is either null
-  // or an async fallback the caller can invoke for a second, OCR-based pass
-  // over the same document (PDFs with a text layer only). onProgress
-  // (optional) receives human-readable status strings for slow steps.
+  // Public entry point. Returns { text, runOcr, ocrRequired }:
+  //   text        — whatever the fast (non-OCR) path could read, may be ''
+  //   runOcr      — null, or an async OCR pass over the whole document that
+  //                 the caller can invoke (after confirming with the user)
+  //   ocrRequired — true when `text` is unusable and OCR is the only way to
+  //                 read this file (scanned PDF or image upload)
+  // onProgress (optional) receives human-readable status strings.
   async function extract(file, onProgress) {
     const ext = extensionOf(file.name);
     const extractor = EXTRACTORS[ext];
@@ -200,12 +209,14 @@ const TextExtract = (function () {
       throw new Error(`Unsupported file type ".${ext}". Supported: ${Object.keys(EXTRACTORS).join(', ')}`);
     }
     const result = await extractor(file, onProgress);
-    // Most extractors return a plain string; extractPdf returns { text, runOcr }.
-    const { text, runOcr } = typeof result === 'string' ? { text: result, runOcr: null } : result;
-    if (!text || !text.trim()) {
-      throw new Error('No text could be extracted from this file, even with OCR.');
+    // Plain-text extractors return a string; PDF/image extractors return
+    // the full { text, runOcr, ocrRequired } shape.
+    const { text = '', runOcr = null, ocrRequired = false } =
+      typeof result === 'string' ? { text: result } : result;
+    if (!text.trim() && !runOcr) {
+      throw new Error('No text could be extracted from this file.');
     }
-    return { text, runOcr };
+    return { text, runOcr, ocrRequired };
   }
 
   return { extract, supportedExtensions: Object.keys(EXTRACTORS) };

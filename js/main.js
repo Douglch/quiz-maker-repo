@@ -86,21 +86,48 @@
     progress(`Reading ${file.name}…`);
 
     try {
-      const { text, runOcr } = await TextExtract.extract(file, progress);
-      progress(`Parsing questions from ${file.name}…`);
-      let { questions, skipped } = QuizParser.parse(text);
+      const { text, runOcr, ocrRequired } = await TextExtract.extract(file, progress);
 
-      // Fast path incomplete? Run the deferred OCR pass over the whole
-      // document and merge in whatever it can recover.
-      const needsOcr = questions.length === 0 || skipped.length > 0 ||
-        missingNumbers(questions, skipped).length > 0;
-      if (runOcr && needsOcr) {
-        progress(`${questions.length} parsed, ${skipped.length} skipped — trying OCR to recover the rest…`);
-        try {
-          const ocrText = await runOcr(progress);
-          ({ questions, skipped } = mergeParses({ questions, skipped }, QuizParser.parse(ocrText)));
-        } catch (err) {
-          console.error('OCR recovery failed; keeping fast-path results.', err);
+      // Scanned PDF or image: OCR is the only way to read it. It's slow,
+      // so get the user's go-ahead before committing to it.
+      let sourceText = text;
+      if (ocrRequired && runOcr) {
+        const ok = confirm(
+          `"${file.name}" has no readable text layer (scanned PDF or image), so it can only be read with OCR.\n\n` +
+          'OCR runs locally in your browser and can take several minutes for long documents ' +
+          '(the first run also downloads the OCR engine, ~15 MB).\n\n' +
+          'Start OCR now?'
+        );
+        if (!ok) {
+          setStatus('Upload cancelled — this file can only be read with OCR.', true);
+          return;
+        }
+        sourceText = await runOcr(progress);
+      }
+
+      progress(`Parsing questions from ${file.name}…`);
+      let { questions, skipped } = QuizParser.parse(sourceText);
+
+      // Fast path incomplete? Offer the deferred OCR pass over the whole
+      // document — it can recover missed questions, but it's slow, so the
+      // user may decline and keep what already parsed.
+      const missing = missingNumbers(questions, skipped).length;
+      const needsOcr = questions.length === 0 || skipped.length > 0 || missing > 0;
+      if (runOcr && !ocrRequired && needsOcr) {
+        const ok = confirm(
+          `${questions.length} question(s) parsed, but ${skipped.length} were skipped and ${missing} not detected at all.\n\n` +
+          'A full OCR pass over the document may recover them, but it can take several minutes ' +
+          '(the first run also downloads the OCR engine, ~15 MB).\n\n' +
+          'Run OCR now? Choosing Cancel keeps the questions that already parsed.'
+        );
+        if (ok) {
+          progress('Running OCR to recover the remaining questions…');
+          try {
+            const ocrText = await runOcr(progress);
+            ({ questions, skipped } = mergeParses({ questions, skipped }, QuizParser.parse(ocrText)));
+          } catch (err) {
+            console.error('OCR recovery failed; keeping fast-path results.', err);
+          }
         }
       }
 

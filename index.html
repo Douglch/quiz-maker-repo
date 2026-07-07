@@ -42,7 +42,7 @@
             </svg>
           </div>
           <div class="dropzone-title">Choose a file or drag it here</div>
-          <div class="hint">PDF, DOCX, TXT, or images (PNG/JPG) — scanned PDFs are read with OCR automatically</div>
+          <div class="hint">PDF, DOCX, TXT, or images (PNG/JPG) — scanned files can be read with OCR (you'll be asked first)</div>
         </div>
       </label>
 
@@ -86,11 +86,16 @@ C. Choice three
 D. Choice four
 Answer: D
 Explanation: optional text...</pre>
-        <p>Multi-answer questions ("Answer: A,B,G") become checkbox questions automatically.
+        <p>ExamTopics-style dumps are also supported: "Question #12 Topic 1" headers,
+           "Correct Answer: A" keys, and the community discussion sections (comments, votes,
+           "Selected Answer" lines) are recognised and filtered out automatically.</p>
+        <p>Multi-answer questions ("Answer: A,B,G" or "Correct Answer: BD") become checkbox questions automatically.
            Anything that doesn't match this pattern (e.g. drag-and-drop / hotspot items) is skipped and listed separately.
            All parsing happens locally in your browser — no file is uploaded anywhere.</p>
-        <p>If a PDF has no selectable text (scanned pages or outlined fonts), each page is
-           rendered and read with OCR (Tesseract.js) — slower, and accuracy depends on scan quality.</p>
+        <p>If a PDF has no selectable text (scanned pages or outlined fonts), each page can be
+           rendered and read with OCR (Tesseract.js) — slower, and accuracy depends on scan quality.
+           You'll always be asked before an OCR pass starts, and you can decline and keep whatever
+           parsed without it.</p>
       </details>
     </div>
   </section>

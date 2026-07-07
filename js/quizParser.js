@@ -1,27 +1,62 @@
 // quizParser.js
 // Turns raw extracted text (from a PDF, DOCX, or TXT) into an array of
-// question objects. Designed around the common exam-dump layout:
+// question objects. Two layouts are recognised:
 //
+// Classic exam-dump format:
 //   1. Question text, possibly spanning
 //   multiple lines?
 //   A. Choice one
 //   B. Choice two
-//   C. Choice three
-//   D. Choice four
 //   Answer: D
 //   Explanation: optional free text...
 //
-// Multi-answer questions look like "Answer: A,B,G" and become checkbox
-// questions. Anything that doesn't yield at least 2 options + a valid
-// answer is returned separately as "skipped" (e.g. HOTSPOT / drag-drop
-// items that don't fit an MCQ shape).
+// ExamTopics-style format (with community discussion):
+//   Question #12 Topic 1
+//   Question text...
+//   A. Choice one
+//   B. Choice two
+//   Correct Answer: A
+//   <community vote bars, comments, "Selected Answer: ...", etc.>
+//
+// Multi-answer questions look like "Answer: A,B,G" or "Correct Answer: BD"
+// and become checkbox questions. Anything that doesn't yield at least
+// 2 options + a valid answer is returned separately as "skipped" (e.g.
+// HOTSPOT / drag-drop items that don't fit an MCQ shape).
 
 const QuizParser = (function () {
 
+  // Classic format: "12. Question text..."
   const QUESTION_START = /^(\d{1,4})\.\s+(.*)$/;
+  // ExamTopics-style header: "Question #12 Topic 1" — the question text
+  // follows on the next lines. Numbering may restart when the topic changes.
+  const QUESTION_HEADER = /^Question\s*#?\s*(\d{1,4})(?:\s+Topic\s+\d+)?\s*$/i;
   const OPTION_START = /^([A-Ha-h])[.)]\s+(.*)$/;
-  const ANSWER_LINE = /^Answer\s*:\s*([A-Za-z](?:\s*,\s*[A-Za-z])*)\s*$/i;
+  // "Answer: D", "Correct Answer: A", "Suggested Answer: BD", "Answer: A,C" —
+  // letters may be comma-separated or run together.
+  const ANSWER_LINE = /^(?:Correct\s+|Suggested\s+)?Answer\s*:\s*([A-Ha-h](?:\s*,?\s*[A-Ha-h])*)\s*$/i;
   const EXPLANATION_START = /^Explanation\s*:\s*(.*)$/i;
+
+  // Lines that are never quiz content — page counters and the voting chrome
+  // ExamTopics-style dumps put between the answer and the comments. Dropped
+  // wherever they appear.
+  const NOISE_LINES = [
+    /^\d+\s*\/\s*\d+$/,                      // "12/926" page counter
+    /^Community vote distribution/i,
+    /^(?:[A-H]{1,4}\s*\(\d+%\)[\s,]*)+$/,    // "A (98%)" / "BD (70%)" vote bars
+    /^upvoted\s+\d+\s+times?$/i,
+    /^Selected Answer\s*:\s*[A-H]/i,         // a commenter's vote, not the key
+    /^Topic\s+\d+$/i,                        // header fragment on its own line
+  ];
+
+  // Forum-comment markers. Once a question's answer is known, hitting one of
+  // these means everything until the next question is discussion, not content
+  // (comments freely quote options and answer lines, so they must be
+  // discarded rather than parsed).
+  const DISCUSSION_MARKERS = [
+    /\bHighly Voted\b/i,
+    /\bMost Recent\b/i,
+    /\b(?:minutes?|hours?|days?|weeks?|months?|years?)\s+ago\b/i,
+  ];
 
   // Remove repeated boilerplate lines (running headers/footers that show up
   // on every page of a converted PDF, e.g. "Page 3 of 40" or a vendor banner).
@@ -97,12 +132,29 @@ const QuizParser = (function () {
     for (const line of lines) {
       if (!line) continue;
 
-      const qMatch = line.match(QUESTION_START);
-      if (qMatch && (!current || Number(qMatch[1]) > Number(current.rawNumber))) {
+      if (NOISE_LINES.some((re) => re.test(line))) {
+        // Once the answer is known, noise also marks the start of the
+        // discussion section — nothing after it belongs to the question.
+        if (current && current.answer) current.mode = 'discussion';
+        continue;
+      }
+      if (current && current.answer && current.mode !== 'discussion' &&
+          DISCUSSION_MARKERS.some((re) => re.test(line))) {
+        current.mode = 'discussion';
+        continue;
+      }
+
+      const headerMatch = line.match(QUESTION_HEADER);
+      const qMatch = headerMatch ? null : line.match(QUESTION_START);
+      // A "Question #N" header always starts a new question (numbering can
+      // restart per topic). A bare "12. text" line only counts when the
+      // number increases, so numbered lists inside question text or comments
+      // don't split the current question.
+      if (headerMatch || (qMatch && (!current || Number(qMatch[1]) > Number(current.rawNumber)))) {
         pushCurrent();
         current = {
-          rawNumber: qMatch[1],
-          questionLines: qMatch[2] ? [qMatch[2]] : [],
+          rawNumber: (headerMatch || qMatch)[1],
+          questionLines: qMatch && qMatch[2] ? [qMatch[2]] : [],
           options: [],
           answer: null,
           explanationLines: [],
@@ -111,7 +163,9 @@ const QuizParser = (function () {
         continue;
       }
 
-      if (!current) continue; // preamble / title page noise before question 1
+      // Preamble noise before question 1, or discussion junk after an
+      // ExamTopics answer — ignore until the next question starts.
+      if (!current || current.mode === 'discussion') continue;
 
       const optMatch = line.match(OPTION_START);
       if (optMatch && current.mode !== 'explanation' && current.mode !== 'answer') {
@@ -121,8 +175,9 @@ const QuizParser = (function () {
       }
 
       const ansMatch = line.match(ANSWER_LINE);
-      if (ansMatch) {
-        current.answer = ansMatch[1].split(',').map((s) => s.trim().toUpperCase());
+      if (ansMatch && !current.answer) {
+        // First answer line wins — later matches are commenters quoting it.
+        current.answer = ansMatch[1].replace(/[^A-Ha-h]/g, '').toUpperCase().split('');
         current.mode = 'answer';
         continue;
       }
