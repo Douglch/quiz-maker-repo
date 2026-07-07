@@ -22,6 +22,8 @@
 // and become checkbox questions. Anything that doesn't yield at least
 // 2 options + a valid answer is returned separately as "skipped" (e.g.
 // HOTSPOT / drag-drop items that don't fit an MCQ shape).
+//
+// Tests: node --test test/  (see test/quizParser.test.js)
 
 const QuizParser = (function () {
 
@@ -32,31 +34,54 @@ const QuizParser = (function () {
   const QUESTION_HEADER = /^Question\s*#?\s*(\d{1,4})(?:\s+Topic\s+\d+)?\s*$/i;
   const OPTION_START = /^([A-Ha-h])[.)]\s+(.*)$/;
   // "Answer: D", "Correct Answer: A", "Suggested Answer: BD", "Answer: A,C" —
-  // letters may be comma-separated or run together.
+  // letters may be comma-separated or run together (validated by
+  // parseAnswerKey, which rejects prose like "Answer: added").
   const ANSWER_LINE = /^(?:Correct\s+|Suggested\s+)?Answer\s*:\s*([A-Ha-h](?:\s*,?\s*[A-Ha-h])*)\s*$/i;
+  // As above but the Correct/Suggested prefix is mandatory — used to rescue
+  // a question whose comments started before its answer key was seen
+  // (commenters write bare "Answer: X", the real key is always prefixed).
+  const PREFIXED_ANSWER_LINE = /^(?:Correct|Suggested)\s+Answer\s*:\s*([A-Ha-h](?:\s*,?\s*[A-Ha-h])*)\s*$/i;
   const EXPLANATION_START = /^Explanation\s*:\s*(.*)$/i;
 
   // Lines that are never quiz content — page counters and the voting chrome
   // ExamTopics-style dumps put between the answer and the comments. Dropped
   // wherever they appear.
   const NOISE_LINES = [
-    /^\d+\s*\/\s*\d+$/,                      // "12/926" page counter
+    /^\d+\s*\/\s*\d+$/,                    // "12/926" page counter
     /^Community vote distribution/i,
-    /^(?:[A-H]{1,4}\s*\(\d+%\)[\s,]*)+$/,    // "A (98%)" / "BD (70%)" vote bars
-    /^upvoted\s+\d+\s+times?$/i,
-    /^Selected Answer\s*:\s*[A-H]/i,         // a commenter's vote, not the key
-    /^Topic\s+\d+$/i,                        // header fragment on its own line
+    // Vote bars: "A (98%)", "BD (70%) A (25%)", "AC (72%) Other". At least
+    // one "(NN%)" is required so a lone option letter is never treated as
+    // noise.
+    /^(?:(?:[A-H]{1,4}|Other)\s*\(\d+%\)[\s,]*)+(?:Other\b\s*)?$/,
+    /^Selected Answer\s*:\s*[A-H]/i,       // a commenter's vote, not the key
+    /^Topic\s+\d+$/i,                      // header fragment on its own line
   ];
 
-  // Forum-comment markers. Once a question's answer is known, hitting one of
-  // these means everything until the next question is discussion, not content
-  // (comments freely quote options and answer lines, so they must be
-  // discarded rather than parsed).
-  const DISCUSSION_MARKERS = [
-    /\bHighly Voted\b/i,
-    /\bMost Recent\b/i,
-    /\b(?:minutes?|hours?|days?|weeks?|months?|years?)\s+ago\b/i,
+  // Forum badges that mark the start of the comment section. Deliberately
+  // case-sensitive: ExamTopics renders them in title case, while legitimate
+  // question text says things like "the most recent snapshot".
+  const BADGE_MARKERS = [
+    /\bHighly Voted\b/,
+    /\bMost Recent\b/,
+    /^upvoted\s+\d+\s+times?$/i,
   ];
+  // Comment timestamps ("2 weeks, 1 day ago") are weaker evidence — question
+  // text can legitimately contain "3 months ago" — so they only count once
+  // the answer key has been seen.
+  const TIMESTAMP_MARKER = /\b(?:minutes?|hours?|days?|weeks?|months?|years?)\s+ago\b/i;
+
+  // Badge ExamTopics appends inline to the community's favourite option.
+  const MOST_VOTED_BADGE = /\s*Most Voted\s*$/;
+
+  // "A" / "A, C" / "BD" → ['A','C'] / ['B','D']. Returns null for prose that
+  // happens to match the letter pattern: a run-together multi-letter key
+  // must be uppercase ("BD" is a key, "added" is a word).
+  function parseAnswerKey(raw) {
+    raw = raw.trim();
+    const runTogether = raw.length > 1 && !/[\s,]/.test(raw);
+    if (runTogether && raw !== raw.toUpperCase()) return null;
+    return [...new Set(raw.replace(/[^A-Ha-h]/g, '').toUpperCase().split(''))];
+  }
 
   // Remove repeated boilerplate lines (running headers/footers that show up
   // on every page of a converted PDF, e.g. "Page 3 of 40" or a vendor banner).
@@ -86,7 +111,7 @@ const QuizParser = (function () {
     const questionText = q.questionLines.join('\n').trim();
     const options = q.options.map((o) => ({
       letter: o.letter.toUpperCase(),
-      text: o.text.trim(),
+      text: o.text.replace(MOST_VOTED_BADGE, '').trim(),
     })).filter((o) => o.text.length > 0);
 
     const explanation = q.explanationLines.join('\n').trim();
@@ -121,6 +146,10 @@ const QuizParser = (function () {
     const questions = [];
     const skipped = [];
     let current = null;
+    // Set once a "Question #N" header is seen: header-style documents never
+    // use bare "12. text" lines as question starts, so numbered lists inside
+    // question text or comments can't split a question.
+    let headerStyle = false;
 
     function pushCurrent() {
       const result = finalizeQuestion(current);
@@ -138,18 +167,23 @@ const QuizParser = (function () {
         if (current && current.answer) current.mode = 'discussion';
         continue;
       }
-      if (current && current.answer && current.mode !== 'discussion' &&
-          DISCUSSION_MARKERS.some((re) => re.test(line))) {
-        current.mode = 'discussion';
-        continue;
+
+      if (current && current.mode !== 'discussion') {
+        const badge = BADGE_MARKERS.some((re) => re.test(line));
+        if (badge || (current.answer && TIMESTAMP_MARKER.test(line))) {
+          current.mode = 'discussion';
+          continue;
+        }
       }
 
       const headerMatch = line.match(QUESTION_HEADER);
-      const qMatch = headerMatch ? null : line.match(QUESTION_START);
+      if (headerMatch) headerStyle = true;
+      const qMatch = (headerMatch || headerStyle) ? null : line.match(QUESTION_START);
+
       // A "Question #N" header always starts a new question (numbering can
       // restart per topic). A bare "12. text" line only counts when the
-      // number increases, so numbered lists inside question text or comments
-      // don't split the current question.
+      // number increases, so numbered lists inside content don't split the
+      // current question.
       if (headerMatch || (qMatch && (!current || Number(qMatch[1]) > Number(current.rawNumber)))) {
         pushCurrent();
         current = {
@@ -163,9 +197,19 @@ const QuizParser = (function () {
         continue;
       }
 
-      // Preamble noise before question 1, or discussion junk after an
-      // ExamTopics answer — ignore until the next question starts.
-      if (!current || current.mode === 'discussion') continue;
+      if (!current) continue; // preamble / title page noise before question 1
+
+      if (current.mode === 'discussion') {
+        // Comments started before the answer key was seen (a badge came
+        // first). An explicitly prefixed "Correct/Suggested Answer:" line
+        // can still rescue the question; bare "Answer:" quotes cannot.
+        if (!current.answer) {
+          const rescue = line.match(PREFIXED_ANSWER_LINE);
+          const key = rescue && parseAnswerKey(rescue[1]);
+          if (key) current.answer = key;
+        }
+        continue;
+      }
 
       const optMatch = line.match(OPTION_START);
       if (optMatch && current.mode !== 'explanation' && current.mode !== 'answer') {
@@ -176,10 +220,14 @@ const QuizParser = (function () {
 
       const ansMatch = line.match(ANSWER_LINE);
       if (ansMatch && !current.answer) {
-        // First answer line wins — later matches are commenters quoting it.
-        current.answer = ansMatch[1].replace(/[^A-Ha-h]/g, '').toUpperCase().split('');
-        current.mode = 'answer';
-        continue;
+        // First plausible answer line wins — later matches are commenters
+        // quoting it.
+        const key = parseAnswerKey(ansMatch[1]);
+        if (key) {
+          current.answer = key;
+          current.mode = 'answer';
+          continue;
+        }
       }
 
       const expMatch = line.match(EXPLANATION_START);
